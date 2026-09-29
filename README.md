@@ -1,4 +1,7 @@
 # Obsidian_to_Anki
+
+> **Fork note:** this fork only updates notes whose fields, tags or deck actually changed, instead of rewriting every note in a changed file. Install with [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+
 Plugin to add flashcards from a text or markdown file to Anki. Run in Obsidian as a plugin, or from the command-line as a python script. Built with [Obsidian](https://obsidian.md/) markdown syntax in mind. Supports **user-defined custom syntax for flashcards.**  
 See the [Trello](https://trello.com/b/6MXEizGg/obsidiantoanki) for planned features.
 
