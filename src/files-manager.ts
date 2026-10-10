@@ -5,24 +5,30 @@ import { AllFile } from './file'
 import * as AnkiConnect from './anki'
 import { basename } from 'path'
 import multimatch from "multimatch"
+import { TAG_SEP } from './note'
 interface addNoteResponse {
     result: number,
     error: string | null
 }
 
-interface notesInfoResponse {
-    result: Array<{
-        noteId: number,
-        modelName: string,
-        tags: string[],
-        fields: Record<string, {
-            order: number,
-            value: string
-        }>,
-        cards: number[]
+interface noteInfo {
+    noteId: number,
+    modelName: string,
+    tags: string[],
+    fields: Record<string, {
+        order: number,
+        value: string
     }>,
+    cards: number[]
+}
+
+interface notesInfoResponse {
+    result: noteInfo[],
     error: string | null
 }
+
+// getDecks result: deck name -> card IDs in that deck
+type getDecksResult = Record<string, number[]>
 
 interface Requests1Result {
     0: {
@@ -48,6 +54,17 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
         _difference.delete(elem)
     }
     return _difference
+}
+
+function normaliseTags(tags: string[]): string {
+    // Anki tags are case-insensitive and unordered
+    let result = new Set<string>()
+    for (let tag of tags) {
+        if (tag) {
+            result.add(tag.toLowerCase())
+        }
+    }
+    return Array.from(result).sort().join(" ")
 }
 
 
@@ -169,7 +186,67 @@ export class FileManager {
         this.files = obfiles_changed
     }
 
+    async skipUnchangedNotes() {
+        // Drop notes whose fields, tags and deck already match Anki,
+        // so a one-character edit doesn't rewrite every note in the file.
+        const ids: number[] = []
+        for (let file of this.ownFiles) {
+            for (let parsed of file.notes_to_edit) {
+                ids.push(parsed.identifier)
+            }
+        }
+        if (!ids.length) {
+            return
+        }
+        try {
+            const notes_request = AnkiConnect.notesInfo(ids)
+            const notes = await AnkiConnect.invoke(notes_request.action, notes_request.params) as noteInfo[]
+            const infoById = new Map<number, noteInfo>()
+            const cardIds: number[] = []
+            for (let info of notes) {
+                if (info && info.noteId) {
+                    infoById.set(info.noteId, info)
+                    cardIds.push(...info.cards)
+                }
+            }
+            const decks_request = AnkiConnect.getDecks(cardIds)
+            const decks = await AnkiConnect.invoke(decks_request.action, decks_request.params) as getDecksResult
+            const deckByCard = new Map<number, string>()
+            for (let deck in decks) {
+                for (let card of decks[deck]) {
+                    deckByCard.set(card, deck)
+                }
+            }
+            let skipped = 0
+            for (let file of this.ownFiles) {
+                const globalTags = file.global_tags.split(TAG_SEP)
+                file.notes_to_edit = file.notes_to_edit.filter(parsed => {
+                    const info = infoById.get(parsed.identifier)
+                    if (!info) {
+                        return true
+                    }
+                    const fieldsSame = Object.entries(parsed.note.fields).every(
+                        ([name, value]) => info.fields[name] && info.fields[name].value === value
+                    )
+                    const tagsSame = normaliseTags(info.tags) === normaliseTags([...parsed.note.tags, ...globalTags])
+                    const deckSame = info.cards.every(card => deckByCard.get(card) === file.target_deck)
+                    const changed = !(fieldsSame && tagsSame && deckSame)
+                    if (!changed) {
+                        skipped++
+                    }
+                    return changed
+                })
+            }
+            if (skipped) {
+                console.info("Skipped", skipped, "unchanged notes out of", ids.length)
+            }
+        } catch (e) {
+            console.warn("skipUnchangedNotes failed, updating all notes:", e)
+        }
+    }
+
     async requests_1() {
+        await this.skipUnchangedNotes()
         let requests: AnkiConnect.AnkiConnectRequest[] = []
         let temp: AnkiConnect.AnkiConnectRequest[] = []
         console.info("Requesting addition of new deck into Anki...")

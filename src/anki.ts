@@ -96,6 +96,14 @@ export function notesInfo(note_ids: number[]): AnkiConnectRequest {
 	)
 }
 
+export function getDecks(card_ids: number[]): AnkiConnectRequest {
+	return request(
+		'getDecks', {
+			cards: card_ids
+		}
+	)
+}
+
 export function changeDeck(card_ids: number[], deck: string): AnkiConnectRequest {
 	return request(
 		'changeDeck', {
