@@ -459,7 +459,14 @@ export class AllFile extends AbstractFile {
             (id_position: number, index: number) => {
                 const identifier: number | null = this.note_ids[index + this.notes_to_add.length + this.inline_notes_to_add.length] // Since regular then inline then regex
                 if (identifier) {
-                    regex_inserts.push([id_position, "\n" + id_to_str(identifier, false, this.data.comment)])
+                    let id_str = "\n" + id_to_str(identifier, false, this.data.comment)
+                    // A regex match usually ends right before a line break, which already
+                    // terminates the ID line: drop the trailing newline to avoid an extra blank line
+                    const next = this.file.charAt(id_position)
+                    if (next === "" || next === "\n" || next === "\r") {
+                        id_str = id_str.slice(0, -1)
+                    }
+                    regex_inserts.push([id_position, id_str])
                 }
             }
         )
